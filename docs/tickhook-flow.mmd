@@ -1,11 +1,11 @@
-graph LR
-    A[Your App] -->|POST /v1/jobs/one-shot| B[TickHook]
-    B -->|Stores job| C[(Redis)]
-    C -->|Time arrives| D[TickHook Scheduler]
-    D -->|Fires webhook| E[Your Endpoint]
+graph TB
+    A[Your App] -->|"POST /v1/jobs"| B[TickHook]
+    B -->|"Stores job"| C[(Redis)]
+    C -->|"Time arrives"| D[TickHook Scheduler]
+    D -->|"Fires webhook"| E[Your Endpoint]
 
-    style A fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    style B fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    style C fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    style D fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    style E fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style A fill:#2196F3,stroke:#1565C0,stroke-width:2px,color:#ffffff
+    style B fill:#FF9800,stroke:#E65100,stroke-width:2px,color:#ffffff
+    style C fill:#E91E63,stroke:#880E4F,stroke-width:2px,color:#ffffff
+    style D fill:#FF9800,stroke:#E65100,stroke-width:2px,color:#ffffff
+    style E fill:#4CAF50,stroke:#2E7D32,stroke-width:2px,color:#ffffff
