@@ -3,8 +3,20 @@ name: CI
 on:
   push:
     branches: [ main, master, develop ]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - '.github/workflows/**'
   pull_request:
     branches: [ main, master ]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - '.github/workflows/**'
 
 jobs:
   test:
