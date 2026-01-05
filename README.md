@@ -1,10 +1,13 @@
 # TickHook
 
 [![CI](https://github.com/cr0hn/tickhook/workflows/CI/badge.svg)](https://github.com/cr0hn/tickhook/actions?query=workflow%3ACI)
+[![codecov](https://codecov.io/gh/cr0hn/TickHook/graph/badge.svg)](https://codecov.io/gh/cr0hn/TickHook)
 [![Go Report Card](https://goreportcard.com/badge/github.com/cr0hn/tickhook)](https://goreportcard.com/report/github.com/cr0hn/tickhook)
 [![Go Reference](https://pkg.go.dev/badge/github.com/cr0hn/tickhook.svg)](https://pkg.go.dev/github.com/cr0hn/tickhook)
+[![GitHub release](https://img.shields.io/github/v/release/cr0hn/TickHook)](https://github.com/cr0hn/TickHook/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Fcr0hn%2Ftickhook-blue)](https://github.com/cr0hn/tickhook/pkgs/container/tickhook)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/9999/badge)](https://www.bestpractices.dev/projects/9999)
 
 **Execute HTTP calls at specific times, at scale, without the complexity.**
 
@@ -341,6 +344,7 @@ See [docs/API.md](docs/API.md) for complete request/response examples.
 ## Documentation
 
 - [API Reference](docs/API.md) — Complete endpoint documentation
+- [OpenAPI Spec](docs/openapi.yaml) — OpenAPI 3.1 specification (Swagger/Postman compatible)
 - [Architecture](docs/ARCHITECTURE.md) — System design and internals
 - [Deployment](docs/DEPLOYMENT.md) — Docker, Kubernetes, systemd guides
 - [Internals](docs/INTERNALS.md) — Redis data model, execution details

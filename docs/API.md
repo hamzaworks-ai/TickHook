@@ -1,5 +1,7 @@
 # TickHook API Documentation
 
+> **OpenAPI Spec**: The complete API specification is available in [openapi.yaml](openapi.yaml) for use with Swagger UI, Postman, or code generators.
+
 ## Table of Contents
 
 - [Overview](#overview)

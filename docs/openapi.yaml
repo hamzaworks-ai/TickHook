@@ -1,0 +1,268 @@
+openapi: 3.1.0
+info:
+  title: TickHook API
+  description: Webhook scheduler API - schedule HTTP calls at specific times
+  version: 1.0.0
+  contact:
+    email: cr0hn@cr0hn.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+security:
+  - BearerAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+        '503':
+          $ref: '#/components/responses/Unhealthy'
+
+  /v1/jobs/one-shot:
+    post:
+      summary: Create one-shot job
+      description: Schedule a webhook to execute once at a specific time
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OneShotJobRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/JobCreated'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/jobs/recurring:
+    post:
+      summary: Create recurring job
+      description: Schedule a webhook to execute repeatedly at fixed intervals
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecurringJobRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/JobCreated'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/jobs/{job_id}:
+    get:
+      summary: Get job details
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete job
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      responses:
+        '200':
+          description: Job deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                    example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+
+  parameters:
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    Webhook:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          example: https://example.com/webhook
+        method:
+          type: string
+          enum: [GET, POST, PUT, PATCH, DELETE]
+          default: POST
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          description: Request body (JSON encoded)
+        timeout_ms:
+          type: integer
+          default: 5000
+
+    RetryConfig:
+      type: object
+      properties:
+        max_attempts:
+          type: integer
+          default: 3
+        backoff_base_ms:
+          type: integer
+          default: 1000
+
+    OneShotJobRequest:
+      type: object
+      required: [execute_at, webhook]
+      properties:
+        execute_at:
+          type: string
+          format: date-time
+          example: "2026-01-15T10:00:00Z"
+        webhook:
+          $ref: '#/components/schemas/Webhook'
+        retry:
+          $ref: '#/components/schemas/RetryConfig'
+
+    RecurringJobRequest:
+      type: object
+      required: [start_at, interval_ms, webhook]
+      properties:
+        start_at:
+          type: string
+          format: date-time
+        interval_ms:
+          type: integer
+          minimum: 1
+        webhook:
+          $ref: '#/components/schemas/Webhook'
+        retry:
+          $ref: '#/components/schemas/RetryConfig'
+
+    Job:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [one_shot, recurring]
+        due_at_ms:
+          type: integer
+        interval_ms:
+          type: integer
+        attempt:
+          type: integer
+        max_attempts:
+          type: integer
+        backoff_base_ms:
+          type: integer
+        url:
+          type: string
+        method:
+          type: string
+        headers:
+          type: object
+        body: {}
+        timeout_ms:
+          type: integer
+        created_at_ms:
+          type: integer
+        updated_at_ms:
+          type: integer
+        last_error:
+          type: string
+        last_http_code:
+          type: integer
+        status:
+          type: string
+          enum: [pending, failed]
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+  responses:
+    JobCreated:
+      description: Job created
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              job_id:
+                type: string
+                format: uuid
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Invalid or missing auth token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unhealthy:
+      description: Service unhealthy
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
