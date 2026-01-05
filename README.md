@@ -33,13 +33,7 @@ So you use `cron`, a `sleep()`, or poll your database. It works... until it does
 
 A service that exposes an API to create scheduled tasks (one-shot or recurring) and executes an HTTP webhook when the time arrives.
 
-```
-Your App  →  POST /v1/jobs/one-shot  →  TickHook stores in Redis
-                                              ↓
-                                        Time arrives
-                                              ↓
-                                        TickHook fires webhook → Your endpoint
-```
+![TickHook Flow](docs/img/tickhook-flow.png)
 
 ## What TickHook Is NOT
 
