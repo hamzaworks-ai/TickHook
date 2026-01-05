@@ -1,9 +1,12 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -57,9 +60,19 @@ jobs:
         go-version: '1.22'
         cache: true
 
-    - name: Extract version
-      id: get_version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+    - name: Validate version format
+      run: |
+        if [[ ! "${{ inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Error: Version must be in format v1.0.0"
+          exit 1
+        fi
+
+    - name: Create and push tag
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -a ${{ inputs.version }} -m "Release ${{ inputs.version }}"
+        git push origin ${{ inputs.version }}
 
     - name: Generate changelog
       id: changelog
@@ -69,7 +82,7 @@ jobs:
 
         # Generate changelog between tags
         if [ -z "$PREV_TAG" ]; then
-          CHANGELOG=$(git log --pretty=format:"- %s" --no-merges)
+          CHANGELOG=$(git log --pretty=format:"- %s" --no-merges | head -20)
         else
           CHANGELOG=$(git log --pretty=format:"- %s" --no-merges ${PREV_TAG}..HEAD)
         fi
@@ -81,50 +94,69 @@ jobs:
         ${CHANGELOG}
 
         ## Features
-        - ✅ One-shot job scheduling
-        - ✅ Recurring job scheduling
-        - ✅ Exponential backoff with jitter
-        - ✅ Global and per-domain concurrency limits
-        - ✅ Automatic idempotency headers
-        - ✅ REST API with Bearer token auth
-        - ✅ Single binary deployment
-        - ✅ Redis persistence
+        - One-shot job scheduling
+        - Recurring job scheduling
+        - Exponential backoff with jitter
+        - Global and per-domain concurrency limits
+        - Automatic idempotency headers
+        - REST API with Bearer token auth
+        - Single binary deployment
+        - Redis persistence
 
         ## Docker
 
         \`\`\`bash
-        docker pull ghcr.io/cr0hn/tickhook:${{ steps.get_version.outputs.VERSION }}
+        docker pull ghcr.io/cr0hn/tickhook:${{ inputs.version }}
         \`\`\`
 
         ## Quick Start
 
         \`\`\`bash
         # Download binary (Linux/amd64)
-        wget https://github.com/cr0hn/tickhook/releases/download/${{ steps.get_version.outputs.VERSION }}/tickhook-linux-amd64
+        wget https://github.com/cr0hn/tickhook/releases/download/${{ inputs.version }}/tickhook-linux-amd64
         chmod +x tickhook-linux-amd64
 
         # Run with Redis
         ./tickhook-linux-amd64 --redis-url redis://localhost:6379 --auth-token your-secret
         \`\`\`
 
-        **Full Changelog**: https://github.com/cr0hn/tickhook/compare/${PREV_TAG}...${{ steps.get_version.outputs.VERSION }}
+        **Full Changelog**: https://github.com/cr0hn/tickhook/compare/${PREV_TAG}...${{ inputs.version }}
         EOF
 
     - name: Build binaries
       run: |
-        # Build for multiple platforms
         mkdir -p dist
+        VERSION=${{ inputs.version }}
 
-        # Linux
-        GOOS=linux GOARCH=amd64 go build -ldflags="-w -s -X main.Version=${{ steps.get_version.outputs.VERSION }}" -o dist/tickhook-linux-amd64 ./cmd/tickhook
-        GOOS=linux GOARCH=arm64 go build -ldflags="-w -s -X main.Version=${{ steps.get_version.outputs.VERSION }}" -o dist/tickhook-linux-arm64 ./cmd/tickhook
+        # Linux amd64
+        GOOS=linux GOARCH=amd64 go build -ldflags="-w -s -X main.Version=${VERSION}" -o dist/tickhook-linux-amd64 ./cmd/tickhook
 
-        # macOS
-        GOOS=darwin GOARCH=amd64 go build -ldflags="-w -s -X main.Version=${{ steps.get_version.outputs.VERSION }}" -o dist/tickhook-darwin-amd64 ./cmd/tickhook
-        GOOS=darwin GOARCH=arm64 go build -ldflags="-w -s -X main.Version=${{ steps.get_version.outputs.VERSION }}" -o dist/tickhook-darwin-arm64 ./cmd/tickhook
+        # Linux arm64
+        GOOS=linux GOARCH=arm64 go build -ldflags="-w -s -X main.Version=${VERSION}" -o dist/tickhook-linux-arm64 ./cmd/tickhook
 
-        # Windows
-        GOOS=windows GOARCH=amd64 go build -ldflags="-w -s -X main.Version=${{ steps.get_version.outputs.VERSION }}" -o dist/tickhook-windows-amd64.exe ./cmd/tickhook
+        # Linux 386
+        GOOS=linux GOARCH=386 go build -ldflags="-w -s -X main.Version=${VERSION}" -o dist/tickhook-linux-386 ./cmd/tickhook
+
+        # Linux arm (32-bit, e.g., Raspberry Pi)
+        GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-w -s -X main.Version=${VERSION}" -o dist/tickhook-linux-arm ./cmd/tickhook
+
+        # macOS amd64 (Intel)
+        GOOS=darwin GOARCH=amd64 go build -ldflags="-w -s -X main.Version=${VERSION}" -o dist/tickhook-darwin-amd64 ./cmd/tickhook
+
+        # macOS arm64 (Apple Silicon)
+        GOOS=darwin GOARCH=arm64 go build -ldflags="-w -s -X main.Version=${VERSION}" -o dist/tickhook-darwin-arm64 ./cmd/tickhook
+
+        # Windows amd64
+        GOOS=windows GOARCH=amd64 go build -ldflags="-w -s -X main.Version=${VERSION}" -o dist/tickhook-windows-amd64.exe ./cmd/tickhook
+
+        # Windows 386
+        GOOS=windows GOARCH=386 go build -ldflags="-w -s -X main.Version=${VERSION}" -o dist/tickhook-windows-386.exe ./cmd/tickhook
+
+        # Windows arm64
+        GOOS=windows GOARCH=arm64 go build -ldflags="-w -s -X main.Version=${VERSION}" -o dist/tickhook-windows-arm64.exe ./cmd/tickhook
+
+        # FreeBSD amd64
+        GOOS=freebsd GOARCH=amd64 go build -ldflags="-w -s -X main.Version=${VERSION}" -o dist/tickhook-freebsd-amd64 ./cmd/tickhook
 
         # Create checksums
         cd dist
@@ -132,8 +164,10 @@ jobs:
         cd ..
 
     - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
+        tag_name: ${{ inputs.version }}
+        name: ${{ inputs.version }}
         body_path: RELEASE_NOTES.md
         files: |
           dist/tickhook-*
@@ -166,26 +200,14 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ghcr.io/cr0hn/tickhook
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=semver,pattern={{major}}
-          type=raw,value=latest,enable={{is_default_branch}}
-
     - name: Build and push Docker image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: .
         platforms: linux/amd64,linux/arm64
         push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
+        tags: |
+          ghcr.io/cr0hn/tickhook:${{ inputs.version }}
+          ghcr.io/cr0hn/tickhook:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
