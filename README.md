@@ -5,30 +5,67 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/cr0hn/tickhook.svg)](https://pkg.go.dev/github.com/cr0hn/tickhook)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Fcr0hn%2Ftickhook-blue)](https://github.com/cr0hn/tickhook/pkgs/container/tickhook)
-[![Go Version](https://img.shields.io/badge/go-1.22+-blue.svg)](https://go.dev/)
-[![Redis](https://img.shields.io/badge/redis-6+-red.svg)](https://redis.io/)
 
-**A lightweight, self-hosted webhook scheduler written in Go.**
+**Execute HTTP calls at specific times, at scale, without the complexity.**
 
-Schedule HTTP webhooks to fire at specific times or repeat at fixed intervals. Single binary. Redis backend. That's it.
+A self-hosted webhook scheduler. Single binary. Redis backend. Nothing else.
 
 ---
 
-## Performance
+## The Problem
 
-> TickHook is designed for high performance with minimal resource usage.
+You start with simple needs:
 
-<p align="center">
-  <img src="docs/img/performance_overview.png" alt="Performance Overview" width="800"/>
-</p>
+- "Send this email tomorrow at 8:00 AM"
+- "Call this endpoint every 6 hours"
+- "Fire a reminder in 15 minutes"
+- "Refresh this data daily at midnight"
 
-| Metric | Value |
-|--------|-------|
-| **Binary Size** | 6.2 MB |
-| **Memory (idle)** | ~8 MB |
-| **Memory (load)** | ~17 MB |
-| **API Throughput** | 46K req/s |
-| **Job Creation** | 20K req/s |
+So you use `cron`, a `sleep()`, or poll your database. It works... until it doesn't:
+
+- Users create schedules dynamically (not static cron jobs)
+- You need persistence across restarts and deployments
+- You want consistent retries with backoff
+- You need to avoid hammering external APIs (rate limits)
+- You want something simple to operate
+
+**TickHook solves this**: schedule webhooks with an API, and they fire when the time comes.
+
+---
+
+## What TickHook Is
+
+A service that exposes an API to create scheduled tasks (one-shot or recurring) and executes an HTTP webhook when the time arrives.
+
+```
+Your App  →  POST /v1/jobs/one-shot  →  TickHook stores in Redis
+                                              ↓
+                                        Time arrives
+                                              ↓
+                                        TickHook fires webhook → Your endpoint
+```
+
+## What TickHook Is NOT
+
+- **Not a workflow engine** — no steps, conditions, or branching
+- **Not distributed cron** — no complex cron expressions
+- **Not a general job queue** — doesn't execute arbitrary code
+- **Not exactly-once** — at-least-once delivery (make receivers idempotent)
+
+TickHook is deliberately small: timestamps, intervals, HTTP. That's it.
+
+---
+
+## Use Cases
+
+| Scenario | Example |
+|----------|---------|
+| **Scheduled notifications** | "Send newsletter daily at user's preferred time" |
+| **Drip campaigns** | "Email 1 now, Email 2 tomorrow 8 AM, Email 3 in 3 days" |
+| **Retry failed integrations** | "Webhook failed? Retry in 5 minutes with backoff" |
+| **Expirations** | "Revoke access token at midnight" |
+| **Reminders** | "Notify user 30 minutes before event" |
+| **Periodic syncs** | "Call sync endpoint every hour" |
 
 ---
 
@@ -43,47 +80,107 @@ docker run -d --name redis -p 6379:6379 redis:7-alpine
 ### 2. Run TickHook
 
 ```bash
-# Using Docker
+# Docker
 docker run -d -p 8080:8080 ghcr.io/cr0hn/tickhook:latest \
   --redis-url redis://host.docker.internal:6379 \
   --auth-token my-secret-token
 
-# Or download binary
-wget https://github.com/cr0hn/tickhook/releases/latest/download/tickhook-linux-amd64
-chmod +x tickhook-linux-amd64
-./tickhook-linux-amd64 --redis-url redis://localhost:6379 --auth-token my-secret-token
+# Or binary
+./tickhook --redis-url redis://localhost:6379 --auth-token my-secret-token
 ```
 
-### 3. Schedule a Webhook
+### 3. Schedule Your First Webhook
+
+**One-shot** — fires once at a specific time:
 
 ```bash
-# One-shot: fire once at a specific time
 curl -X POST http://localhost:8080/v1/jobs/one-shot \
   -H "Authorization: Bearer my-secret-token" \
   -H "Content-Type: application/json" \
   -d '{
     "execute_at": "2026-01-15T10:00:00Z",
     "webhook": {
-      "url": "https://httpbin.org/post",
+      "url": "https://your-api.com/webhook",
       "method": "POST",
-      "body": {"message": "Hello!"}
+      "body": {"event": "reminder", "user_id": 123}
     }
   }'
+```
 
-# Recurring: fire every hour
+**Recurring** — fires every N milliseconds:
+
+```bash
 curl -X POST http://localhost:8080/v1/jobs/recurring \
   -H "Authorization: Bearer my-secret-token" \
   -H "Content-Type: application/json" \
   -d '{
-    "start_at": "2026-01-15T10:00:00Z",
-    "interval_ms": 3600000,
+    "start_at": "2026-01-15T00:00:00Z",
+    "interval_ms": 86400000,
     "webhook": {
-      "url": "https://httpbin.org/post",
-      "method": "POST",
-      "body": {"type": "hourly_check"}
+      "url": "https://your-api.com/daily-sync",
+      "method": "POST"
     }
   }'
 ```
+
+### 4. Manage Jobs
+
+```bash
+# Get job status
+curl http://localhost:8080/v1/jobs/{job_id} \
+  -H "Authorization: Bearer my-secret-token"
+
+# Cancel a job
+curl -X DELETE http://localhost:8080/v1/jobs/{job_id} \
+  -H "Authorization: Bearer my-secret-token"
+```
+
+---
+
+## How It Works
+
+TickHook maintains a time-ordered list of jobs in Redis:
+
+1. **Every 200ms**, it checks: "which jobs are due now?"
+2. **Executes them in parallel**, respecting concurrency limits
+3. **On success**: one-shot jobs are deleted, recurring jobs schedule the next run
+4. **On failure**: retries with exponential backoff
+
+### Job Types
+
+| Type | Behavior |
+|------|----------|
+| **One-shot** | Executes once, deleted on success, kept on failure for inspection |
+| **Recurring** | Executes repeatedly at fixed intervals, always schedules next run |
+
+### Retry Logic
+
+| HTTP Response | Action |
+|---------------|--------|
+| 2xx | Success — job completes |
+| 5xx, 429 | Retry with exponential backoff |
+| 4xx (except 429) | Fail immediately — no retry |
+| Network error | Retry with backoff |
+
+Backoff: `base_ms * 2^(attempt-1)` + random jitter (0-250ms), capped at 10 minutes.
+
+### Concurrency Control
+
+TickHook prevents overwhelming external APIs:
+
+- `--max-inflight`: Total concurrent webhooks (default: 200)
+- `--max-per-domain`: Per destination domain (default: 5)
+
+### Idempotency Headers
+
+Every webhook automatically includes:
+
+```
+X-Job-Id: <uuid>
+Idempotency-Key: <uuid>
+```
+
+**Recommendation**: Your receiver should deduplicate using these headers.
 
 ---
 
@@ -103,7 +200,7 @@ Download from [GitHub Releases](https://github.com/cr0hn/tickhook/releases):
 # Linux
 wget https://github.com/cr0hn/tickhook/releases/latest/download/tickhook-linux-amd64
 
-# macOS (Apple Silicon)
+# macOS
 wget https://github.com/cr0hn/tickhook/releases/latest/download/tickhook-darwin-arm64
 
 # Windows
@@ -118,12 +215,6 @@ cd tickhook
 go build -o tickhook ./cmd/tickhook
 ```
 
-### Go Install
-
-```bash
-go install github.com/cr0hn/tickhook/cmd/tickhook@latest
-```
-
 ---
 
 ## Configuration
@@ -132,29 +223,18 @@ go install github.com/cr0hn/tickhook/cmd/tickhook@latest
 
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
-| `--redis-url` | Yes | - | Redis URL (e.g., `redis://localhost:6379`) |
-| `--auth-token` | Yes | - | Bearer token for API auth |
-| `--bind` | No | `0.0.0.0:8080` | HTTP bind address |
+| `--redis-url` | Yes | — | Redis connection URL |
+| `--auth-token` | Yes | — | Bearer token for API authentication |
+| `--bind` | No | `0.0.0.0:8080` | HTTP server bind address |
 | `--namespace` | No | `tickhook` | Redis key prefix |
-| `--poll-ms` | No | `200` | Scheduler poll interval (ms) |
-| `--batch` | No | `200` | Jobs per poll cycle |
-| `--max-inflight` | No | `200` | Max concurrent webhooks |
-| `--max-per-domain` | No | `5` | Max concurrent per domain |
-| `--default-timeout-ms` | No | `5000` | Webhook timeout (ms) |
-| `--log-level` | No | `info` | Log level |
+| `--poll-ms` | No | `200` | How often to check for due jobs (ms) |
+| `--batch` | No | `200` | Max jobs to fetch per poll |
+| `--max-inflight` | No | `200` | Max concurrent webhook executions |
+| `--max-per-domain` | No | `5` | Max concurrent per destination domain |
+| `--default-timeout-ms` | No | `5000` | Default webhook timeout (ms) |
+| `--log-level` | No | `info` | Log verbosity (debug, info, warn, error) |
 
-### Example
-
-```bash
-./tickhook \
-  --redis-url redis://localhost:6379 \
-  --auth-token secret \
-  --bind 0.0.0.0:9090 \
-  --max-inflight 500 \
-  --max-per-domain 10
-```
-
-### Docker Compose
+### Docker Compose Example
 
 ```yaml
 version: '3.8'
@@ -171,156 +251,92 @@ services:
     command: >
       --redis-url redis://redis:6379
       --auth-token your-secret-token
+      --max-inflight 500
+      --max-per-domain 10
     depends_on:
       - redis
 ```
 
 ---
 
+## Performance
+
+<p align="center">
+  <img src="docs/img/performance_overview.png" alt="Performance Overview" width="800"/>
+</p>
+
+| Metric | Value |
+|--------|-------|
+| Binary size | 6.2 MB |
+| Memory (idle) | ~8 MB |
+| Memory (under load) | ~17 MB |
+| API throughput | 46,000 req/s |
+| Job creation rate | 20,000 req/s |
+
+---
+
+## Guarantees and Limitations
+
+### What TickHook Guarantees
+
+- **Persistence**: Jobs survive process restarts (stored in Redis)
+- **Retries**: Failed webhooks retry with exponential backoff
+- **Concurrency control**: Won't overwhelm your targets
+
+### V1 Limitations
+
+- **Single consumer**: One process instance (no HA yet)
+- **At-least-once**: Webhooks may fire more than once — receivers must be idempotent
+- **No cron expressions**: Only fixed intervals (every N ms)
+- **UTC only**: All times in UTC, handle timezone conversion client-side
+- **Crash window**: If the process dies between claiming and executing a job, that job may be lost
+
+### V2 Roadmap
+
+- High availability with lease-based job claiming
+- Prometheus metrics endpoint
+- Multiple consumer support
+
+---
+
 ## API Reference
 
-All endpoints require `Authorization: Bearer <token>` header.
+All endpoints require `Authorization: Bearer <token>`.
 
-### Create One-Shot Job
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/v1/jobs/one-shot` | Create one-shot job |
+| POST | `/v1/jobs/recurring` | Create recurring job |
+| GET | `/v1/jobs/{job_id}` | Get job details |
+| DELETE | `/v1/jobs/{job_id}` | Cancel/delete job |
+| GET | `/health` | Health check (no auth) |
 
-```http
-POST /v1/jobs/one-shot
-```
-
-```json
-{
-  "execute_at": "2026-01-15T10:00:00Z",
-  "webhook": {
-    "url": "https://example.com/hook",
-    "method": "POST",
-    "headers": {"X-Custom": "value"},
-    "body": {"key": "value"},
-    "timeout_ms": 5000
-  },
-  "retry": {
-    "max_attempts": 3,
-    "backoff_base_ms": 1000
-  }
-}
-```
-
-**Response:** `{"job_id": "uuid"}`
-
-### Create Recurring Job
-
-```http
-POST /v1/jobs/recurring
-```
-
-```json
-{
-  "start_at": "2026-01-15T10:00:00Z",
-  "interval_ms": 3600000,
-  "webhook": { "url": "...", "method": "POST" },
-  "retry": { "max_attempts": 3 }
-}
-```
-
-**Response:** `{"job_id": "uuid"}`
-
-### Get Job
-
-```http
-GET /v1/jobs/{job_id}
-```
-
-### Cancel Job
-
-```http
-DELETE /v1/jobs/{job_id}
-```
-
-**Response:** `{"deleted": true}`
-
-### Health Check
-
-```http
-GET /health
-```
-
-No authentication required.
-
----
-
-## How It Works
-
-**One-shot jobs** execute once at the specified time and are deleted on success. On failure, retries occur with exponential backoff until max attempts is reached.
-
-**Recurring jobs** execute at fixed intervals (in milliseconds). The next execution is scheduled from the previous due time, not completion time, ensuring consistent intervals.
-
-### Retry Behavior
-
-| Scenario | Behavior |
-|----------|----------|
-| HTTP 2xx | Success - job completes |
-| HTTP 5xx, 429 | Retry with backoff |
-| HTTP 4xx (except 429) | Fail immediately |
-| Network error | Retry with backoff |
-
-Backoff formula: `base_ms * 2^(attempt-1)` + jitter (0-250ms), capped at 10 minutes.
-
-### Concurrency Control
-
-TickHook limits concurrent webhook executions to prevent overwhelming your targets:
-
-- **Global limit** (`--max-inflight`): Total concurrent webhooks
-- **Per-domain limit** (`--max-per-domain`): Per destination domain
-
-### Idempotency
-
-Every webhook includes automatic headers for idempotent handling:
-
-```
-X-Job-Id: <job_id>
-Idempotency-Key: <job_id>
-```
-
----
-
-## Requirements
-
-- Redis 6+
-- Go 1.22+ (if building from source)
-
----
-
-## Limitations
-
-- **Single process**: V1 runs as one instance. If it crashes mid-execution, the job may be lost.
-- **At-least-once**: Webhooks may be delivered more than once. Make receivers idempotent.
-- **No cron**: Uses fixed intervals only, no cron expressions.
-- **UTC only**: All times are UTC. Handle timezone conversion client-side.
+See [docs/API.md](docs/API.md) for complete request/response examples.
 
 ---
 
 ## Documentation
 
-- [API Reference](docs/API.md) - Complete API documentation
-- [Architecture](docs/ARCHITECTURE.md) - System design and internals
-- [Deployment](docs/DEPLOYMENT.md) - Docker, Kubernetes, systemd guides
+- [API Reference](docs/API.md) — Complete endpoint documentation
+- [Architecture](docs/ARCHITECTURE.md) — System design and internals
+- [Deployment](docs/DEPLOYMENT.md) — Docker, Kubernetes, systemd guides
+- [Internals](docs/INTERNALS.md) — Redis data model, execution details
 
 ---
 
-## Roadmap
+## Why Not Just Use...
 
-**V2 (Planned)**
-- High availability with lease-based job claiming
-- Prometheus metrics
-- Multiple consumer support
+### Cron?
 
----
+Cron works for static, hand-defined jobs. TickHook handles dynamic, user-created schedules at scale with retries and concurrency control.
 
-## Contributing
+### Postgres polling?
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests
-4. Submit a pull request
+Works initially, but contention grows with scale. Redis ZSET provides efficient time-based queries with minimal overhead.
+
+### Celery/Sidekiq?
+
+Those are general job queues requiring workers that execute code. TickHook only fires HTTP — your code runs on the receiving end.
 
 ---
 
@@ -330,4 +346,4 @@ MIT License. See [LICENSE](LICENSE).
 
 ---
 
-**Author:** Dani (cr0hn)
+**Author**: Dani (cr0hn)
