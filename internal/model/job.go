@@ -73,9 +73,9 @@ type RetryConfig struct {
 
 // CreateOneShotRequest is the request body for creating a one-shot job.
 type CreateOneShotRequest struct {
-	ExecuteAt time.Time      `json:"execute_at"`
-	Webhook   WebhookConfig  `json:"webhook"`
-	Retry     *RetryConfig   `json:"retry,omitempty"`
+	ExecuteAt time.Time     `json:"execute_at"`
+	Webhook   WebhookConfig `json:"webhook"`
+	Retry     *RetryConfig  `json:"retry,omitempty"`
 }
 
 // CreateRecurringRequest is the request body for creating a recurring job.

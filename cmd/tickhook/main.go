@@ -22,13 +22,17 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	flag.Usage = config.Usage
 
 	cfg, err := config.Parse()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
 		config.Usage()
-		os.Exit(1)
+		return 1
 	}
 
 	// Setup logger
@@ -43,7 +47,7 @@ func main() {
 	redisStore, err := store.NewRedisStore(cfg.RedisURL, cfg.Namespace)
 	if err != nil {
 		logger.Error("Failed to connect to Redis", "error", err)
-		os.Exit(1)
+		return 1
 	}
 	defer redisStore.Close()
 
@@ -52,7 +56,7 @@ func main() {
 	if err := redisStore.Ping(ctx); err != nil {
 		cancel()
 		logger.Error("Failed to ping Redis", "error", err)
-		os.Exit(1)
+		return 1
 	}
 	cancel()
 	logger.Info("Connected to Redis")
@@ -110,6 +114,8 @@ func main() {
 	}
 
 	logger.Info("TickHook shutdown complete")
+
+	return 0
 }
 
 func parseLogLevel(level string) slog.Level {

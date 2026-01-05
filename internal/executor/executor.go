@@ -21,16 +21,16 @@ import (
 
 // Executor executes webhook jobs with concurrency control.
 type Executor struct {
-	cfg            *config.Config
-	store          store.Store
-	logger         *slog.Logger
-	httpClient     *http.Client
-	globalSem      chan struct{}
-	domainSems     map[string]chan struct{}
-	domainSemsMu   sync.RWMutex
-	jobQueue       chan string
-	wg             sync.WaitGroup
-	stopCh         chan struct{}
+	cfg          *config.Config
+	store        store.Store
+	logger       *slog.Logger
+	httpClient   *http.Client
+	globalSem    chan struct{}
+	domainSems   map[string]chan struct{}
+	domainSemsMu sync.RWMutex
+	jobQueue     chan string
+	wg           sync.WaitGroup
+	stopCh       chan struct{}
 }
 
 // NewExecutor creates a new executor.
@@ -210,7 +210,7 @@ func (e *Executor) doWebhook(ctx context.Context, job *model.Job) (int, error) {
 	defer resp.Body.Close()
 
 	// Drain body to allow connection reuse
-	io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body)
 
 	return resp.StatusCode, nil
 }

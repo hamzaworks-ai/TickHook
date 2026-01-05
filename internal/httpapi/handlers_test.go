@@ -77,7 +77,7 @@ func TestServerHeader(t *testing.T) {
 
 	server := NewServer(cfg, mockStore, logger)
 
-	req := httptest.NewRequest("GET", "/health", nil)
+	req := httptest.NewRequest("GET", "/health", http.NoBody)
 	w := httptest.NewRecorder()
 
 	server.server.Handler.ServeHTTP(w, req)
@@ -97,7 +97,7 @@ func TestAuthMiddleware_NoToken(t *testing.T) {
 
 	server := NewServer(cfg, mockStore, logger)
 
-	req := httptest.NewRequest("GET", "/v1/jobs/test-id", nil)
+	req := httptest.NewRequest("GET", "/v1/jobs/test-id", http.NoBody)
 	w := httptest.NewRecorder()
 
 	server.server.Handler.ServeHTTP(w, req)
@@ -117,7 +117,7 @@ func TestAuthMiddleware_InvalidToken(t *testing.T) {
 
 	server := NewServer(cfg, mockStore, logger)
 
-	req := httptest.NewRequest("GET", "/v1/jobs/test-id", nil)
+	req := httptest.NewRequest("GET", "/v1/jobs/test-id", http.NoBody)
 	req.Header.Set("Authorization", "Bearer wrong-token")
 	w := httptest.NewRecorder()
 
@@ -138,7 +138,7 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 
 	server := NewServer(cfg, mockStore, logger)
 
-	req := httptest.NewRequest("GET", "/v1/jobs/nonexistent", nil)
+	req := httptest.NewRequest("GET", "/v1/jobs/nonexistent", http.NoBody)
 	req.Header.Set("Authorization", "Bearer test-token")
 	w := httptest.NewRecorder()
 
@@ -160,7 +160,7 @@ func TestHealthEndpoint_NoAuth(t *testing.T) {
 
 	server := NewServer(cfg, mockStore, logger)
 
-	req := httptest.NewRequest("GET", "/health", nil)
+	req := httptest.NewRequest("GET", "/health", http.NoBody)
 	w := httptest.NewRecorder()
 
 	server.server.Handler.ServeHTTP(w, req)
@@ -324,7 +324,7 @@ func TestDeleteJob(t *testing.T) {
 
 	server := NewServer(cfg, mockStore, logger)
 
-	req := httptest.NewRequest("DELETE", "/v1/jobs/test-job-id", nil)
+	req := httptest.NewRequest("DELETE", "/v1/jobs/test-job-id", http.NoBody)
 	req.Header.Set("Authorization", "Bearer test-token")
 	w := httptest.NewRecorder()
 
@@ -359,7 +359,7 @@ func TestDeleteJob_NotFound(t *testing.T) {
 
 	server := NewServer(cfg, mockStore, logger)
 
-	req := httptest.NewRequest("DELETE", "/v1/jobs/nonexistent", nil)
+	req := httptest.NewRequest("DELETE", "/v1/jobs/nonexistent", http.NoBody)
 	req.Header.Set("Authorization", "Bearer test-token")
 	w := httptest.NewRecorder()
 
@@ -389,7 +389,7 @@ func TestGetJob(t *testing.T) {
 
 	server := NewServer(cfg, mockStore, logger)
 
-	req := httptest.NewRequest("GET", "/v1/jobs/test-job-id", nil)
+	req := httptest.NewRequest("GET", "/v1/jobs/test-job-id", http.NoBody)
 	req.Header.Set("Authorization", "Bearer test-token")
 	w := httptest.NewRecorder()
 

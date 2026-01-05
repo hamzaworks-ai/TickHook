@@ -38,7 +38,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "Authorization header must be Bearer token")
 			return
 		}

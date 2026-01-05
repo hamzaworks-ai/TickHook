@@ -14,7 +14,7 @@ func BenchmarkExtractDomain(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ExtractDomain(urls[i%len(urls)])
+		_, _ = ExtractDomain(urls[i%len(urls)])
 	}
 }
 

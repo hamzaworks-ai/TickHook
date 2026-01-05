@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cr0hn/tickhook/internal/model"
 	"github.com/google/uuid"
+
+	"github.com/cr0hn/tickhook/internal/model"
 )
 
 func getTestRedisURL() string {
@@ -46,7 +47,7 @@ func BenchmarkCreateJob(b *testing.B) {
 			UpdatedAtMs:   time.Now().UnixMilli(),
 			Status:        model.JobStatusPending,
 		}
-		store.CreateJob(ctx, job)
+		_ = store.CreateJob(ctx, job)
 	}
 }
 
@@ -74,11 +75,11 @@ func BenchmarkGetJob(b *testing.B) {
 		UpdatedAtMs:   time.Now().UnixMilli(),
 		Status:        model.JobStatusPending,
 	}
-	store.CreateJob(ctx, job)
+	_ = store.CreateJob(ctx, job)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.GetJob(ctx, "bench-get-job")
+		_, _ = store.GetJob(ctx, "bench-get-job")
 	}
 }
 
@@ -107,14 +108,14 @@ func BenchmarkGetDueJobs(b *testing.B) {
 			UpdatedAtMs:   time.Now().UnixMilli(),
 			Status:        model.JobStatusPending,
 		}
-		store.CreateJob(ctx, job)
+		_ = store.CreateJob(ctx, job)
 	}
 
 	nowMs := time.Now().UnixMilli()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		store.GetDueJobs(ctx, nowMs, 200)
+		_, _ = store.GetDueJobs(ctx, nowMs, 200)
 	}
 }
 
@@ -142,13 +143,13 @@ func BenchmarkUpdateJob(b *testing.B) {
 		UpdatedAtMs:   time.Now().UnixMilli(),
 		Status:        model.JobStatusPending,
 	}
-	store.CreateJob(ctx, job)
+	_ = store.CreateJob(ctx, job)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		job.Attempt = i % 10
 		job.UpdatedAtMs = time.Now().UnixMilli()
-		store.UpdateJob(ctx, job)
+		_ = store.UpdateJob(ctx, job)
 	}
 }
 
@@ -166,7 +167,7 @@ func BenchmarkScheduleOperations(b *testing.B) {
 		jobID := fmt.Sprintf("bench-sched-%d", i)
 		dueAtMs := time.Now().Add(time.Hour).UnixMilli()
 
-		store.AddToSchedule(ctx, jobID, dueAtMs)
-		store.RemoveFromSchedule(ctx, jobID)
+		_ = store.AddToSchedule(ctx, jobID, dueAtMs)
+		_ = store.RemoveFromSchedule(ctx, jobID)
 	}
 }

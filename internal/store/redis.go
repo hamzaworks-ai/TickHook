@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/cr0hn/tickhook/internal/model"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/cr0hn/tickhook/internal/model"
 )
 
 // ErrJobNotFound is returned when a job is not found.
@@ -163,18 +164,18 @@ func (s *RedisStore) Ping(ctx context.Context) error {
 // serializeJob converts a Job to a map for Redis HSET.
 func (s *RedisStore) serializeJob(job *model.Job) (map[string]any, error) {
 	data := map[string]any{
-		"id":             job.ID,
-		"type":           string(job.Type),
-		"due_at_ms":      strconv.FormatInt(job.DueAtMs, 10),
-		"attempt":        strconv.Itoa(job.Attempt),
-		"max_attempts":   strconv.Itoa(job.MaxAttempts),
+		"id":              job.ID,
+		"type":            string(job.Type),
+		"due_at_ms":       strconv.FormatInt(job.DueAtMs, 10),
+		"attempt":         strconv.Itoa(job.Attempt),
+		"max_attempts":    strconv.Itoa(job.MaxAttempts),
 		"backoff_base_ms": strconv.FormatInt(job.BackoffBaseMs, 10),
-		"url":            job.URL,
-		"method":         job.Method,
-		"timeout_ms":     strconv.Itoa(job.TimeoutMs),
-		"created_at_ms":  strconv.FormatInt(job.CreatedAtMs, 10),
-		"updated_at_ms":  strconv.FormatInt(job.UpdatedAtMs, 10),
-		"status":         string(job.Status),
+		"url":             job.URL,
+		"method":          job.Method,
+		"timeout_ms":      strconv.Itoa(job.TimeoutMs),
+		"created_at_ms":   strconv.FormatInt(job.CreatedAtMs, 10),
+		"updated_at_ms":   strconv.FormatInt(job.UpdatedAtMs, 10),
+		"status":          string(job.Status),
 	}
 
 	if job.IntervalMs > 0 {
