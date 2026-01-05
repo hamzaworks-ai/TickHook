@@ -10,8 +10,6 @@
 
 A self-hosted webhook scheduler. Single binary. Redis backend. Nothing else.
 
----
-
 ## The Problem
 
 You start with simple needs:
@@ -30,8 +28,6 @@ So you use `cron`, a `sleep()`, or poll your database. It works... until it does
 - You want something simple to operate
 
 **TickHook solves this**: schedule webhooks with an API, and they fire when the time comes.
-
----
 
 ## What TickHook Is
 
@@ -54,8 +50,6 @@ Your App  →  POST /v1/jobs/one-shot  →  TickHook stores in Redis
 
 TickHook is deliberately small: timestamps, intervals, HTTP. That's it.
 
----
-
 ## Use Cases
 
 | Scenario | Example |
@@ -66,8 +60,6 @@ TickHook is deliberately small: timestamps, intervals, HTTP. That's it.
 | **Expirations** | "Revoke access token at midnight" |
 | **Reminders** | "Notify user 30 minutes before event" |
 | **Periodic syncs** | "Call sync endpoint every hour" |
-
----
 
 ## Quick Start
 
@@ -102,6 +94,7 @@ curl -X POST http://localhost:8080/v1/jobs/one-shot \
     "webhook": {
       "url": "https://your-api.com/webhook",
       "method": "POST",
+      "headers": {"X-Custom-Header": "my-value"},
       "body": {"event": "reminder", "user_id": 123}
     }
   }'
@@ -135,7 +128,73 @@ curl -X DELETE http://localhost:8080/v1/jobs/{job_id} \
   -H "Authorization: Bearer my-secret-token"
 ```
 
----
+## Receiving Webhooks
+
+When TickHook fires a webhook, your endpoint receives:
+
+### HTTP Request
+
+```http
+POST /your-endpoint HTTP/1.1
+Host: your-api.com
+Content-Type: application/json
+X-Job-Id: 550e8400-e29b-41d4-a716-446655440000
+Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
+X-Custom-Header: my-value
+
+{"event": "reminder", "user_id": 123}
+```
+
+### What Your Endpoint Receives
+
+| Component | Description |
+|-----------|-------------|
+| **Method** | The HTTP method you specified (`POST`, `GET`, etc.) |
+| **URL** | Your endpoint URL |
+| **Headers** | Your custom headers + automatic TickHook headers |
+| **Body** | The exact JSON body you provided when creating the job |
+
+### Automatic Headers
+
+TickHook adds these headers to every webhook (cannot be overridden):
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `X-Job-Id` | UUID | Unique job identifier |
+| `Idempotency-Key` | UUID (same as X-Job-Id) | For deduplication |
+| `Content-Type` | `application/json` | When body is present |
+
+### Example Receiver (Node.js)
+
+```javascript
+app.post('/webhook', (req, res) => {
+  const jobId = req.headers['x-job-id'];
+  const idempotencyKey = req.headers['idempotency-key'];
+
+  // Check if already processed (idempotency)
+  if (await alreadyProcessed(idempotencyKey)) {
+    return res.status(200).json({ status: 'already_processed' });
+  }
+
+  // Process the webhook
+  const { event, user_id } = req.body;
+  await processEvent(event, user_id);
+
+  // Mark as processed
+  await markProcessed(idempotencyKey);
+
+  res.status(200).json({ status: 'ok' });
+});
+```
+
+### Response Handling
+
+| Your Response | TickHook Action |
+|---------------|-----------------|
+| 2xx | Success — job completes |
+| 5xx, 429 | Retry with exponential backoff |
+| 4xx (except 429) | Fail immediately — no retry |
+| Timeout / network error | Retry with backoff |
 
 ## How It Works
 
@@ -155,13 +214,6 @@ TickHook maintains a time-ordered list of jobs in Redis:
 
 ### Retry Logic
 
-| HTTP Response | Action |
-|---------------|--------|
-| 2xx | Success — job completes |
-| 5xx, 429 | Retry with exponential backoff |
-| 4xx (except 429) | Fail immediately — no retry |
-| Network error | Retry with backoff |
-
 Backoff: `base_ms * 2^(attempt-1)` + random jitter (0-250ms), capped at 10 minutes.
 
 ### Concurrency Control
@@ -170,19 +222,6 @@ TickHook prevents overwhelming external APIs:
 
 - `--max-inflight`: Total concurrent webhooks (default: 200)
 - `--max-per-domain`: Per destination domain (default: 5)
-
-### Idempotency Headers
-
-Every webhook automatically includes:
-
-```
-X-Job-Id: <uuid>
-Idempotency-Key: <uuid>
-```
-
-**Recommendation**: Your receiver should deduplicate using these headers.
-
----
 
 ## Installation
 
@@ -214,8 +253,6 @@ git clone https://github.com/cr0hn/tickhook.git
 cd tickhook
 go build -o tickhook ./cmd/tickhook
 ```
-
----
 
 ## Configuration
 
@@ -257,8 +294,6 @@ services:
       - redis
 ```
 
----
-
 ## Performance
 
 <p align="center">
@@ -272,8 +307,6 @@ services:
 | Memory (under load) | ~17 MB |
 | API throughput | 46,000 req/s |
 | Job creation rate | 20,000 req/s |
-
----
 
 ## Guarantees and Limitations
 
@@ -297,8 +330,6 @@ services:
 - Prometheus metrics endpoint
 - Multiple consumer support
 
----
-
 ## API Reference
 
 All endpoints require `Authorization: Bearer <token>`.
@@ -313,16 +344,12 @@ All endpoints require `Authorization: Bearer <token>`.
 
 See [docs/API.md](docs/API.md) for complete request/response examples.
 
----
-
 ## Documentation
 
 - [API Reference](docs/API.md) — Complete endpoint documentation
 - [Architecture](docs/ARCHITECTURE.md) — System design and internals
 - [Deployment](docs/DEPLOYMENT.md) — Docker, Kubernetes, systemd guides
 - [Internals](docs/INTERNALS.md) — Redis data model, execution details
-
----
 
 ## Why Not Just Use...
 
@@ -338,12 +365,6 @@ Works initially, but contention grows with scale. Redis ZSET provides efficient 
 
 Those are general job queues requiring workers that execute code. TickHook only fires HTTP — your code runs on the receiving end.
 
----
-
 ## License
 
 MIT License. See [LICENSE](LICENSE).
-
----
-
-**Author**: Dani (cr0hn)
