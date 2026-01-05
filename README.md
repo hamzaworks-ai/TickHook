@@ -14,6 +14,7 @@ TickHook allows you to schedule HTTP webhooks to be executed at a specific time 
 
 ## Table of Contents
 
+- [Performance](#performance)
 - [What is TickHook](#what-is-tickhook)
 - [Non-Goals](#non-goals)
 - [Architecture Overview](#architecture-overview)
@@ -30,6 +31,75 @@ TickHook allows you to schedule HTTP webhooks to be executed at a specific time 
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
+
+---
+
+## Performance
+
+> **TickHook is designed for high performance with minimal resource usage.**
+
+<p align="center">
+  <img src="docs/img/performance_overview.png" alt="Performance Overview" width="800"/>
+</p>
+
+### Key Metrics
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| **Binary Size** | **6.2 MB** | Stripped, statically linked |
+| **Memory (startup)** | **~8 MB** | RSS at idle |
+| **Memory (under load)** | **~17 MB** | RSS with 200k jobs processed |
+| **Health Check** | **46,249 req/s** | 4 threads, 100 connections |
+| **Create Job** | **20,085 req/s** | 4 threads, 50 connections |
+
+### API Performance
+
+<p align="center">
+  <img src="docs/img/api_performance.png" alt="API Performance" width="600"/>
+</p>
+
+- **Health Check Endpoint**: 46,249 requests/second (avg latency: 2.33ms)
+- **Create Job Endpoint**: 20,085 requests/second (avg latency: 2.44ms)
+
+*Tested with `wrk` on Intel Xeon (Skylake), Redis 7.0*
+
+### Redis Operations Latency
+
+<p align="center">
+  <img src="docs/img/redis_latency.png" alt="Redis Latency" width="600"/>
+</p>
+
+| Operation | Latency | Throughput |
+|-----------|---------|------------|
+| CreateJob | 278 μs | 3,594 ops/s |
+| GetJob | 198 μs | 5,049 ops/s |
+| UpdateJob | 216 μs | 4,634 ops/s |
+| GetDueJobs | 293 μs | 3,416 ops/s |
+| ScheduleOps | 338 μs | 2,957 ops/s |
+
+### Resource Footprint
+
+<p align="center">
+  <img src="docs/img/footprint.png" alt="Footprint" width="600"/>
+</p>
+
+TickHook maintains an extremely low memory footprint:
+- **Startup**: ~8.4 MB RSS
+- **Under sustained load**: ~17 MB RSS
+- **No memory leaks**: Stable memory usage over time
+
+### Running Your Own Benchmarks
+
+```bash
+# Run Go benchmarks
+make test
+go test -bench=. -benchmem ./...
+
+# Run API load test (requires wrk)
+wrk -t4 -c100 -d30s http://localhost:8080/health
+```
+
+---
 
 ## What is TickHook
 
