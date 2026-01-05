@@ -7,7 +7,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/cr0hn/TickHook)](https://github.com/cr0hn/TickHook/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Fcr0hn%2Ftickhook-blue)](https://github.com/cr0hn/tickhook/pkgs/container/tickhook)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/9999/badge)](https://www.bestpractices.dev/projects/9999)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11698/badge)](https://www.bestpractices.dev/projects/11698)
 
 **Execute HTTP calls at specific times, at scale, without the complexity.**
 
