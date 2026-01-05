@@ -1,379 +1,181 @@
 # CLAUDE.md — TickHook
 
-You are Claude Code. Your job is to generate a complete, buildable Go project named **tickhook** from scratch, implementing the PRD in `docs/PRD.md`.
+Project guidelines for Claude Code working on the TickHook codebase.
 
-This repository is **open source** and must be **well documented**.
-
-Author: Dani (cr0hn)
+**Author:** Dani (cr0hn)
 
 ---
 
-## 0) Hard requirements (do not skip)
+## Project Status: V1 Complete
 
-- Language: **Go >= 1.21**
-- Single binary that runs:
-  - HTTP API server
-  - scheduler loop (polling Redis)
-  - webhook worker pool
-- Backend: **Redis** (only persistence)
-- REST API + token auth (static token configured via CLI flag)
-- Poll Redis every **200ms** by default (configurable)
-- Concurrency limits:
-  - global max inflight
-  - per-domain max inflight
-- Retries with exponential backoff + jitter
-- One-shot jobs:
-  - deleted on success
-  - retained on final failure for inspection
-- Recurring jobs:
-  - fixed interval in ms
-  - schedule is computed from the previously scheduled due_at (not from completion time)
-  - only one future execution exists at any time
-- All HTTP responses must include:
-  - `Server: TickHook/1.0`
-- Open source documentation:
-  - `README.md` with a real table of contents and all required sections
-  - `LICENSE` (MIT or Apache-2.0) — choose MIT by default unless otherwise required
-- Repository must build with `go build ./...` and tests pass with `go test ./...`
+TickHook V1 is fully implemented and production-ready. The project includes:
+
+- Complete webhook scheduler with one-shot and recurring jobs
+- REST API with Bearer token authentication
+- Redis backend for persistence and scheduling
+- Worker pool with global and per-domain concurrency limits
+- Exponential backoff retry logic with jitter
+- Comprehensive test suite
+- Docker support with multi-stage builds
+- GitHub Actions CI/CD pipeline
+- Performance benchmarks and documentation
 
 ---
 
-## 1) Project scope: V1 only (no HA)
+## Quick Reference
 
-This is **V1** and must NOT implement high-availability consumer logic (no leases, no running-set, no Lua claiming).
-Assume a single process instance consumes and executes jobs.
+### Build & Test
 
-However, the internal code structure should not block a future V2 that adds HA.
-Keep claim logic isolated behind a small interface.
+```bash
+# Build
+go build ./cmd/tickhook
 
----
+# Test
+go test ./...
 
-## 2) Repository layout (create these folders)
+# Run
+./tickhook --redis-url redis://localhost:6379 --auth-token secret
 
-Use a standard, maintainable Go structure:
-
-- `cmd/tickhook/`  
-  - `main.go` (CLI entrypoint)
-- `internal/config/`  
-  - CLI flags parsing + validation
-- `internal/httpapi/`  
-  - router, middleware, handlers, DTOs
-- `internal/store/`  
-  - Redis store (keys, serialization, atomic updates)
-- `internal/scheduler/`  
-  - polling loop, batch fetch, dispatch
-- `internal/executor/`  
-  - worker pool, concurrency limits, domain semaphore, HTTP client
-- `internal/model/`  
-  - Job structs, enums, validation
-- `internal/util/`  
-  - time helpers, jitter, domain parsing, errors
-- `docs/` (optional but nice)  
-  - extra docs if needed
-- root files:
-  - `README.md`
-  - `PRD_TickHook.md` (already exists)
-  - `LICENSE`
-  - `CHANGELOG.md` (optional; create minimal)
-  - `.gitignore`
-
----
-
-## 3) CLI specification
-
-Binary: `tickhook`
-
-Required flags:
-- `--redis-url` string (example: `redis://localhost:6379`)
-- `--auth-token` string (non-empty)
-
-Optional flags (provide defaults):
-- `--namespace` string (default: `tickhook`)
-- `--bind` string (default: `0.0.0.0:8080`)
-- `--poll-ms` int (default: 200)
-- `--batch` int (default: 200)
-- `--max-inflight` int (default: 200)
-- `--max-per-domain` int (default: 5)
-- `--default-timeout-ms` int (default: 5000)
-- `--log-level` string (default: `info`)
-
-On startup, print a short startup log including bind address, namespace, poll interval, limits.
-
----
-
-## 4) API specification (implement exactly)
-
-### Auth
-All API endpoints require:
-- `Authorization: Bearer <token>`
-
-Return 401 if missing or wrong.
-
-### Endpoints
-
-1) Create one-shot
-- `POST /v1/jobs/one-shot`
-- Request JSON:
-```json
-{
-  "execute_at": "2026-01-10T10:00:00Z",
-  "webhook": {
-    "url": "https://example.com/hook",
-    "method": "POST",
-    "headers": { "X-Test": "1" },
-    "body": { "foo": "bar" },
-    "timeout_ms": 5000
-  },
-  "retry": {
-    "max_attempts": 5,
-    "backoff_base_ms": 1000
-  }
-}
-```
-- Response:
-```json
-{ "job_id": "uuid" }
+# Docker
+docker build -t tickhook .
+docker-compose up
 ```
 
-2) Create recurring
-- `POST /v1/jobs/recurring`
-- Request JSON:
-```json
-{
-  "start_at": "2026-01-10T10:00:00Z",
-  "interval_ms": 86400000,
-  "webhook": { ... },
-  "retry": { ... }
-}
+### Project Structure
+
 ```
-- Response: `{ "job_id": "uuid" }`
-
-3) Get job
-- `GET /v1/jobs/{job_id}`
-- Response must include the stored fields, including current `due_at_ms`, attempt counters, and webhook config.
-
-4) Cancel job
-- `DELETE /v1/jobs/{job_id}`
-- Response:
-```json
-{ "deleted": true }
+cmd/tickhook/          # CLI entrypoint
+internal/
+  config/              # CLI flags parsing
+  httpapi/             # REST API (handlers, middleware)
+  store/               # Redis store implementation
+  scheduler/           # Polling loop
+  executor/            # Worker pool, concurrency control
+  model/               # Job structs, DTOs, validation
+  util/                # Helpers (backoff, domain extraction)
+docs/
+  API.md               # API documentation
+  ARCHITECTURE.md      # System design
+  DEPLOYMENT.md        # Deployment guides
+  INTERNALS.md         # Redis data model, execution details
+  PRD.md               # Original requirements
+  img/                 # Performance graphs
 ```
-If job does not exist, return 404.
-
-### HTTP response banner
-Every response must include:
-- `Server: TickHook/1.0`
-
-Implement this as middleware.
 
 ---
 
-## 5) Redis keys and storage rules
+## Technical Specifications
 
-All keys must be namespaced:
-- schedules ZSET: `{ns}:schedules`
-- job hash: `{ns}:job:{job_id}`
+### Requirements
 
-### ZSET schedules
-- member: `job_id`
-- score: `due_at_ms` (UTC epoch millis)
+- **Go 1.22+** (uses new ServeMux route patterns)
+- **Redis 6+**
 
-### Job hash fields (minimum)
-- `type` = `one_shot|recurring`
-- `due_at_ms`
-- `interval_ms` (recurring only)
-- `attempt`
-- `max_attempts`
-- `backoff_base_ms`
-- `url`
-- `method`
-- `headers_json`
-- `body_json`
-- `timeout_ms`
-- `created_at_ms`
-- `updated_at_ms`
-- `last_error` (optional)
-- `last_http_code` (optional)
+### CLI Flags
 
-Store JSON strings for headers/body (do not use RedisJSON; plain Redis only).
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--redis-url` | Yes | - | Redis connection URL |
+| `--auth-token` | Yes | - | Bearer token for API auth |
+| `--bind` | No | `0.0.0.0:8080` | HTTP bind address |
+| `--namespace` | No | `tickhook` | Redis key prefix |
+| `--poll-ms` | No | `200` | Scheduler poll interval |
+| `--batch` | No | `200` | Jobs fetched per poll |
+| `--max-inflight` | No | `200` | Max concurrent webhooks |
+| `--max-per-domain` | No | `5` | Max concurrent per domain |
+| `--default-timeout-ms` | No | `5000` | Default webhook timeout |
+| `--log-level` | No | `info` | Log level |
 
-Validation:
-- URL must be absolute http/https
-- method allowed: GET, POST, PUT, PATCH, DELETE
-- interval_ms must be > 0
-- max_attempts must be >= 1
+### API Endpoints
 
----
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/v1/jobs/one-shot` | Create one-shot job |
+| POST | `/v1/jobs/recurring` | Create recurring job |
+| GET | `/v1/jobs/{job_id}` | Get job details |
+| DELETE | `/v1/jobs/{job_id}` | Cancel/delete job |
+| GET | `/health` | Health check (no auth) |
 
-## 6) Scheduler behavior (polling)
+All responses include `Server: TickHook/1.0` header.
 
-Default poll interval: 200ms.
+### Redis Keys
 
-Each tick:
-1) now_ms := current UTC epoch ms
-2) Fetch due jobs:
-   - `ZRANGEBYSCORE {ns}:schedules -inf now LIMIT 0 {batch}`
-3) For each job_id:
-   - `ZREM` it from schedules (to avoid reprocessing in this single-consumer V1)
-   - Dispatch `job_id` to executor queue
-
-Important: In V1 there is no HA. If the process crashes after ZREM but before completion, the job can be lost. This is acceptable for V1 but must be documented in README limitations.
+- `{namespace}:schedules` — ZSET (score = due_at_ms)
+- `{namespace}:job:{job_id}` — HASH (job metadata)
 
 ---
 
-## 7) Execution behavior (worker pool)
+## Development Guidelines
 
-Implement a worker pool that processes job_ids:
-- load job metadata from Redis
-- execute HTTP webhook
-- update Redis and reschedule / delete accordingly
+### Code Style
 
-### Concurrency limits
-- global semaphore of size `max-inflight`
-- per-domain semaphore map, each with size `max-per-domain`
-  - domain is derived from the webhook URL host (normalize to lowercase, strip port if present)
+- Use stdlib over external frameworks when possible
+- Structured logging with `slog` (include `job_id` in execution logs)
+- Consistent JSON error responses: `{"error": "code", "message": "description"}`
+- Validate all inputs at API boundary
 
-### HTTP client
-- Use a single `http.Client` with sane defaults
-- Each request uses per-job timeout via context deadline
+### Testing
 
-### Automatic request headers
-Always add:
-- `X-Job-Id: <job_id>`
-- `Idempotency-Key: <job_id>`
+- Unit tests in `*_test.go` files alongside source
+- Benchmark tests in `*_bench_test.go`
+- Integration tests skip if Redis unavailable
 
-Merge with user headers (user headers may override? Prefer: user headers cannot remove these; if same key exists, keep TickHook value).
+### Documentation
+
+- **README.md** — User-focused (QuickStart, Installation, Configuration, API)
+- **docs/** — Technical details (Architecture, Internals, Deployment)
+- Keep README concise; link to docs for deep dives
 
 ---
 
-## 8) Retry logic
+## V1 Limitations (Documented)
 
-On execution failure (network error or HTTP status >= 500; treat 429 as retryable too):
-- attempt := attempt + 1
-- if attempt >= max_attempts:
-  - mark job as failed:
-    - set `last_error`, `last_http_code`, `updated_at_ms`
-    - do NOT re-add to schedules
-    - keep job hash for inspection
-- else:
-  - compute next_due_ms = now + backoff(attempt) + jitter
-  - update job hash `attempt`, `due_at_ms`, `last_error`, `last_http_code`, `updated_at_ms`
-  - `ZADD {ns}:schedules next_due_ms job_id`
-
-Backoff:
-- exponential: `backoff_base_ms * 2^(attempt-1)`
-- cap to a reasonable max (e.g. 10 minutes) to avoid runaway delays
-- jitter: random 0..250ms (configurable constant)
-
-Success criteria:
-- HTTP status 200-299 is success
-- HTTP status 400-499 (except 429) is non-retryable failure:
-  - treat as final failure immediately (attempt set to max, store last_http_code/error)
-  - keep job hash
+1. **Single process** — No HA, crash between ZREM and completion loses job
+2. **At-least-once** — Webhooks may be delivered multiple times
+3. **No cron** — Fixed intervals only
+4. **UTC only** — No timezone handling
 
 ---
 
-## 9) One-shot vs recurring behavior
+## V2 Roadmap (Not Implemented)
 
-### One-shot
-On success:
-- `DEL {ns}:job:{job_id}`
-On final failure:
-- keep job hash
-- do not reschedule
-
-### Recurring
-On success:
-- next_due_ms := previous_due_at_ms + interval_ms
-- update job hash `due_at_ms`, reset attempt to 0, clear last_error/last_http_code, update updated_at_ms
-- `ZADD schedules next_due_ms job_id`
-
-On failure:
-- apply retry logic (retries are for the current occurrence)
+Future enhancements planned:
+- High availability with lease-based job claiming
+- Lua scripts for atomic claim operations
+- Running set for crash recovery
+- Prometheus metrics endpoint
 
 ---
 
-## 10) Documentation requirements (README.md)
+## Performance Benchmarks
 
-Generate a comprehensive `README.md` in English with:
+| Metric | Value |
+|--------|-------|
+| Binary size | 6.2 MB |
+| Memory (idle) | ~8 MB |
+| Memory (load) | ~17 MB |
+| API throughput | 46K req/s |
+| Job creation | 20K req/s |
 
-- Title + short description
-- Table of Contents (real links)
-- What is TickHook
-- Non-goals
-- Architecture overview (diagram in ASCII or Mermaid is OK)
-- Requirements
-- Installation (from source)
-- QuickStart (docker compose for Redis + run TickHook + curl examples)
-- Configuration (CLI flags table)
-- API reference (endpoints + examples)
-- Execution model (polling, worker pool, concurrency)
-- Retry semantics (what retries, what doesn’t)
-- Idempotency (headers and recommended receiver behavior)
-- Redis data model (keys)
-- Limitations (explicitly mention V1 crash window after ZREM)
-- Roadmap (V2: HA with leases + Lua)
-- Contributing (basic)
-- License (MIT)
-
-Also add:
-- `LICENSE` file (MIT)
-- `.gitignore` for Go
-- Optional: `CONTRIBUTING.md` minimal
+Run benchmarks:
+```bash
+go test -bench=. -benchmem ./...
+```
 
 ---
 
-## 11) Testing requirements
+## File Locations
 
-Create a small but real test suite:
-
-- Unit tests:
-  - domain extraction logic
-  - backoff + jitter range
-  - request header merge behavior
-- Integration tests (if feasible without external deps):
-  - use a local Redis if available via env; otherwise skip
-  - alternatively, mock store interface for scheduler/executor logic
-
-At minimum: `go test ./...` must pass.
-
----
-
-## 12) Deliverables checklist
-
-You must produce:
-
-- Working Go module (`go.mod`, `go.sum`)
-- `cmd/tickhook/main.go` running the service
-- Internal packages as described
-- Redis store implementation
-- API handlers and middleware
-- Scheduler loop
-- Worker pool with concurrency limits
-- Retry logic
-- `README.md` complete
-- `LICENSE` (MIT)
-- `PRD_TickHook.md` unchanged
-- Basic tests
-
----
-
-## 13) Implementation notes (keep it minimal)
-
-- Prefer stdlib over large frameworks.
-- Keep dependency count small.
-- Keep code readable; document key decisions in README (not in huge comments).
-- Return consistent JSON errors from the API (include `error` and `message` fields).
-- Validate input thoroughly (bad schedules must return 400 with a clear message).
-- Use structured logging (slog) with `job_id` field on execution logs.
-
----
-
-## 14) Build/run commands (must work)
-
-- Build:
-  - `go build ./...`
-- Run (example):
-  - `tickhook --redis-url redis://localhost:6379 --auth-token secret`
-- Tests:
-  - `go test ./...`
+| Purpose | Location |
+|---------|----------|
+| Main entry | `cmd/tickhook/main.go` |
+| Config parsing | `internal/config/config.go` |
+| API handlers | `internal/httpapi/handlers.go` |
+| Middleware | `internal/httpapi/middleware.go` |
+| Redis store | `internal/store/redis.go` |
+| Scheduler | `internal/scheduler/scheduler.go` |
+| Executor | `internal/executor/executor.go` |
+| Job model | `internal/model/job.go` |
+| Utilities | `internal/util/util.go` |
+| Dockerfile | `Dockerfile` |
+| CI/CD | `.github/workflows/ci.yml`, `.github/workflows/release.yml` |
