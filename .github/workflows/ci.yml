@@ -53,12 +53,12 @@ jobs:
         REDIS_URL: redis://localhost:6379
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v5
       with:
+        token: ${{ secrets.CODECOV_TOKEN }}
         files: ./coverage.out
         flags: unittests
         name: codecov-umbrella
-      continue-on-error: true
 
   lint:
     name: Lint
