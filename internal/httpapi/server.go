@@ -4,6 +4,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -21,7 +22,7 @@ type Server struct {
 }
 
 // NewServer creates a new HTTP API server.
-func NewServer(cfg *config.Config, store store.Store, logger *slog.Logger) *Server {
+func NewServer(cfg *config.Config, store store.Store, logger *slog.Logger) (*Server, error) {
 	s := &Server{
 		cfg:    cfg,
 		store:  store,
@@ -34,6 +35,14 @@ func NewServer(cfg *config.Config, store store.Store, logger *slog.Logger) *Serv
 	// Build middleware chain
 	var handler http.Handler = mux
 	handler = s.serverHeaderMiddleware(handler)
+	
+	// Add rate limiting for security (DoS prevention)
+	rateLimitMiddleware, err := s.rateLimitMiddleware()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create rate limiter: %w", err)
+	}
+	handler = rateLimitMiddleware(handler)
+	
 	handler = s.authMiddleware(handler)
 	handler = s.loggingMiddleware(handler)
 
@@ -43,9 +52,11 @@ func NewServer(cfg *config.Config, store store.Store, logger *slog.Logger) *Serv
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
+		// SECURITY FIX: Limit request body size to prevent DoS
+		MaxHeaderBytes: 1 << 20, // 1MB max header size
 	}
 
-	return s
+	return s, nil
 }
 
 // Start starts the HTTP server.

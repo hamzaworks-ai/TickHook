@@ -68,7 +68,11 @@ func run() int {
 	sched := scheduler.NewScheduler(cfg, redisStore, logger, exec.Dispatch)
 
 	// Create HTTP API server
-	server := httpapi.NewServer(cfg, redisStore, logger)
+	server, err := httpapi.NewServer(cfg, redisStore, logger)
+	if err != nil {
+		logger.Error("Failed to create HTTP server", "error", err)
+		return 1
+	}
 
 	// Setup shutdown handling
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

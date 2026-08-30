@@ -38,4 +38,18 @@ type Store interface {
 
 	// Ping checks if the store is reachable.
 	Ping(ctx context.Context) error
+
+	// ClaimJobs atomically claims jobs for execution with a lease mechanism.
+	// Returns job IDs that were successfully claimed and moved to the running set.
+	// This prevents job loss during crashes.
+	ClaimJobs(ctx context.Context, nowMs int64, limit int, leaseMs int64) ([]string, error)
+
+	// RenewJobLease renews the lease for a job that's still being processed.
+	RenewJobLease(ctx context.Context, jobID string, leaseMs int64) error
+
+	// ReleaseJobLease releases a job from the running set after successful execution.
+	ReleaseJobLease(ctx context.Context, jobID string) error
+
+	// GetStaleJobs returns jobs whose leases have expired (crashed workers).
+	GetStaleJobs(ctx context.Context, nowMs int64, limit int) ([]string, error)
 }

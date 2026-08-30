@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/cr0hn/tickhook/internal/config"
@@ -18,6 +20,39 @@ import (
 	"github.com/cr0hn/tickhook/internal/store"
 	"github.com/cr0hn/tickhook/internal/util"
 )
+
+// dialerWithSSRFProtection creates a custom dialer that prevents SSRF attacks
+// SECURITY FIX: Blocks connections to private IPs at the network level
+func dialerWithSSRFProtection() *net.Dialer {
+	return &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+		Control: func(network, address string, c syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return fmt.Errorf("failed to parse address: %w", err)
+			}
+			
+			ip := net.ParseIP(host)
+			if ip == nil {
+				// If not an IP, try to resolve it
+				ips, err := net.LookupIP(host)
+				if err != nil {
+					return fmt.Errorf("failed to resolve host: %w", err)
+				}
+				if len(ips) > 0 {
+					ip = ips[0]
+				}
+			}
+			
+			if ip != nil && util.IsPrivateIP(ip) {
+				return fmt.Errorf("connection to private IP blocked: %s", ip)
+			}
+			
+			return nil
+		},
+	}
+}
 
 // Executor executes webhook jobs with concurrency control.
 type Executor struct {
@@ -35,11 +70,34 @@ type Executor struct {
 
 // NewExecutor creates a new executor.
 func NewExecutor(cfg *config.Config, store store.Store, logger *slog.Logger) *Executor {
+	// SECURITY FIX: Configure HTTP client with SSRF protection and proper timeouts
+	dialer := dialerWithSSRFProtection()
+	
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			DialContext:           dialer.DialContext,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   10,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+			ForceAttemptHTTP2:     true,
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// SECURITY FIX: Prevent redirect loops and limit redirects
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			return nil
+		},
+	}
+
 	return &Executor{
 		cfg:        cfg,
 		store:      store,
 		logger:     logger,
-		httpClient: &http.Client{},
+		httpClient: httpClient,
 		globalSem:  make(chan struct{}, cfg.MaxInflight),
 		domainSems: make(map[string]chan struct{}),
 		jobQueue:   make(chan string, cfg.MaxInflight*2),

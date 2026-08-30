@@ -5,6 +5,7 @@ package util
 import (
 	"math"
 	"math/rand"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -81,4 +82,66 @@ func IsSuccessHTTPStatus(statusCode int) bool {
 // Client errors (4xx except 429) are non-retryable.
 func IsClientErrorHTTPStatus(statusCode int) bool {
 	return statusCode >= 400 && statusCode <= 499 && statusCode != 429
+}
+
+// isPrivateIP checks if an IP address is in a private range.
+// SECURITY FIX: Blocks SSRF attacks by preventing connections to private IPs
+func IsPrivateIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+
+	// Check for IPv4-mapped IPv6 addresses
+	if ip4 := ip.To4(); ip4 != nil {
+		ip = ip4
+	}
+
+	// RFC 1918 private networks
+	// 10.0.0.0/8
+	if ip[0] == 10 {
+		return true
+	}
+	// 172.16.0.0/12
+	if ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31 {
+		return true
+	}
+	// 192.168.0.0/16
+	if ip[0] == 192 && ip[1] == 168 {
+		return true
+	}
+
+	// Loopback addresses
+	if ip.IsLoopback() {
+		return true
+	}
+
+	// Link-local unicast
+	if ip[0] == 169 && ip[1] == 254 {
+		return true
+	}
+
+	// Localhost range
+	if ip[0] == 127 {
+		return true
+	}
+
+	// IPv6 link-local
+	if ip.IsLinkLocalUnicast() {
+		return true
+	}
+
+	// IPv6 unique local address (fc00::/7)
+	if len(ip) == 16 && ip[0]&0xfe == 0xfc {
+		return true
+	}
+
+	// IPv4-compatible IPv6 (::ffff:0:0/96) - check embedded IPv4
+	if len(ip) == 16 && ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0 &&
+		ip[4] == 0 && ip[5] == 0 && ip[6] == 0 && ip[7] == 0 &&
+		ip[8] == 0 && ip[9] == 0 {
+		// Check the embedded IPv4 address
+		return IsPrivateIP(ip[12:])
+	}
+
+	return false
 }
