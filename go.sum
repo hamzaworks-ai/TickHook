@@ -10,3 +10,5 @@ github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
 github.com/redis/go-redis/v9 v9.7.0 h1:HhLSs+B6O021gwzl+locl0zEDnyNkxMtf/Z3NNBMa9E=
 github.com/redis/go-redis/v9 v9.7.0/go.mod h1:f6zhXITC7JUJIlPEiBOTXxJgPLdZcA93GewI7inzyWw=
+github.com/sethvargo/go-limiter v1.2.0 h1:XKL1vsaQ2zztVJrnZSzpRWCq/aLQqMllJ/3D/0bt/cw=
+github.com/sethvargo/go-limiter v1.2.0/go.mod h1:RC+qY2R7PAK81mBCrZEJlUlKnXSIqqQ8B7G44UgZ/1E=

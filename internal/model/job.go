@@ -5,10 +5,124 @@ package model
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
 )
+
+// isPrivateIP checks if an IP address is private/internal
+// SECURITY FIX: Prevents SSRF attacks by blocking private IP ranges
+func isPrivateIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+
+	if ip.IsPrivate() {
+		return true
+	}
+
+	// Check for IPv4-mapped IPv6 addresses
+	if ip4 := ip.To4(); ip4 != nil {
+		// 10.0.0.0/8
+		if ip4[0] == 10 {
+			return true
+		}
+		// 172.16.0.0/12
+		if ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31 {
+			return true
+		}
+		// 192.168.0.0/16
+		if ip4[0] == 192 && ip4[1] == 168 {
+			return true
+		}
+		// 127.0.0.0/8
+		if ip4[0] == 127 {
+			return true
+		}
+		// 169.254.0.0/16 (link-local)
+		if ip4[0] == 169 && ip4[1] == 254 {
+			return true
+		}
+		// 0.0.0.0/8
+		if ip4[0] == 0 {
+			return true
+		}
+		// 224.0.0.0/4 (multicast)
+		if ip4[0] >= 224 && ip4[0] <= 239 {
+			return true
+		}
+		// 240.0.0.0/4 (reserved)
+		if ip4[0] >= 240 {
+			return true
+		}
+	}
+
+	return false
+}
+
+// validateURLForSSRF validates a URL to prevent SSRF attacks
+// SECURITY FIX: Blocks private IPs, localhost, and cloud metadata endpoints
+func validateURLForSSRF(rawURL string) error {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("URL must be http:// or https://, got %s://", parsedURL.Scheme)
+	}
+
+	host := parsedURL.Hostname()
+	if host == "" {
+		return errors.New("URL must have a host")
+	}
+
+	// Block localhost
+	if host == "localhost" || host == "localhost.localdomain" {
+		return errors.New("localhost is not allowed")
+	}
+
+	// Block .local domains (mDNS)
+	if strings.HasSuffix(host, ".local") {
+		return errors.New(".local domains are not allowed")
+	}
+
+	// Block internal TLDs
+	internalTLDs := []string{".internal", ".private", ".corp", ".home", ".lan"}
+	for _, tld := range internalTLDs {
+		if strings.HasSuffix(host, tld) {
+			return fmt.Errorf("%s domains are not allowed", tld)
+		}
+	}
+
+	// Resolve and check IP addresses
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("failed to resolve host: %w", err)
+	}
+
+	for _, ip := range ips {
+		if isPrivateIP(ip) {
+			return fmt.Errorf("private/internal IP addresses are not allowed: %s", ip)
+		}
+	}
+
+	// Block cloud metadata endpoints
+	// AWS: 169.254.169.254, Azure: 169.254.169.254, GCP: metadata.google.internal
+	if host == "metadata.google.internal" || strings.HasSuffix(host, ".metadata.google.internal") {
+		return errors.New("cloud metadata endpoints are not allowed")
+	}
+
+	// Check for IP address literals that might be private
+	if ip := net.ParseIP(host); ip != nil {
+		if isPrivateIP(ip) {
+			return fmt.Errorf("private IP addresses are not allowed: %s", ip)
+		}
+	}
+
+	return nil
+}
 
 // JobType represents the type of job (one-shot or recurring).
 type JobType string
@@ -108,17 +222,9 @@ func (w *WebhookConfig) Validate(defaultTimeoutMs int) error {
 		return errors.New("webhook.url is required")
 	}
 
-	parsedURL, err := url.Parse(w.URL)
-	if err != nil {
-		return fmt.Errorf("webhook.url is invalid: %w", err)
-	}
-
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return fmt.Errorf("webhook.url must be http:// or https://, got %s://", parsedURL.Scheme)
-	}
-
-	if parsedURL.Host == "" {
-		return errors.New("webhook.url must have a host")
+	// SECURITY FIX: SSRF prevention - validate URL doesn't point to internal resources
+	if err := validateURLForSSRF(w.URL); err != nil {
+		return fmt.Errorf("webhook.url failed SSRF validation: %w", err)
 	}
 
 	// Validate method

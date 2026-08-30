@@ -1,10 +1,11 @@
 module github.com/cr0hn/tickhook
 
-go 1.22
+go 1.25
 
 require (
 	github.com/google/uuid v1.6.0
 	github.com/redis/go-redis/v9 v9.7.0
+	github.com/sethvargo/go-limiter v1.2.0
 )
 
 require (

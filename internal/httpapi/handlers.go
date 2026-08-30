@@ -4,6 +4,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -11,6 +12,10 @@ import (
 	"github.com/cr0hn/tickhook/internal/model"
 	"github.com/cr0hn/tickhook/internal/store"
 )
+
+// maxRequestBodySize is the maximum allowed request body size (1MB)
+// SECURITY FIX: Prevents DoS via large request bodies
+const maxRequestBodySize = 1 << 20 // 1MB
 
 // handleHealth handles the health check endpoint.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -29,8 +34,16 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateOneShot(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// SECURITY FIX: Limit request body size to prevent DoS
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+
 	var req model.CreateOneShotRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Check if error is due to size limit
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "Request body too large")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body: "+err.Error())
 		return
 	}
@@ -58,8 +71,16 @@ func (s *Server) handleCreateOneShot(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateRecurring(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// SECURITY FIX: Limit request body size to prevent DoS
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
+
 	var req model.CreateRecurringRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Check if error is due to size limit
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			writeError(w, http.StatusBadRequest, "invalid_request", "Request body too large")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_request", "Invalid JSON body: "+err.Error())
 		return
 	}

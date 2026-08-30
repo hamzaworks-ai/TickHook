@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 
@@ -38,9 +39,19 @@ func NewRedisStore(redisURL, namespace string) (*RedisStore, error) {
 	}, nil
 }
 
+const (
+	// Default lease time for jobs (5 minutes in milliseconds)
+	DefaultJobLeaseMs = 5 * 60 * 1000
+)
+
 // schedulesKey returns the key for the schedules ZSET.
 func (s *RedisStore) schedulesKey() string {
 	return fmt.Sprintf("%s:schedules", s.namespace)
+}
+
+// runningKey returns the key for the running jobs ZSET (jobs with active leases).
+func (s *RedisStore) runningKey() string {
+	return fmt.Sprintf("%s:running", s.namespace)
 }
 
 // jobKey returns the key for a job hash.
@@ -159,6 +170,98 @@ func (s *RedisStore) Close() error {
 // Ping checks if Redis is reachable.
 func (s *RedisStore) Ping(ctx context.Context) error {
 	return s.client.Ping(ctx).Err()
+}
+
+// ClaimJobs atomically claims jobs for execution with a lease mechanism.
+// This prevents job loss during crashes by moving jobs to a "running" set with expiry.
+func (s *RedisStore) ClaimJobs(ctx context.Context, nowMs int64, limit int, leaseMs int64) ([]string, error) {
+	leaseUntil := nowMs + leaseMs
+	
+	luaScript := `
+	local schedules_key = KEYS[1]
+	local running_key = KEYS[2]
+	local now_ms = tonumber(ARGV[1])
+	local limit = tonumber(ARGV[2])
+	local lease_until = tonumber(ARGV[3])
+	
+	-- Get due jobs
+	local due_jobs = redis.call('ZRANGEBYSCORE', schedules_key, '-inf', now_ms, 'LIMIT', 0, limit)
+	
+	-- Move each job to running set with lease expiry
+	for i, job_id in ipairs(due_jobs) do
+		redis.call('ZADD', running_key, lease_until, job_id)
+		redis.call('ZREM', schedules_key, job_id)
+	end
+	
+	return due_jobs
+	`
+	
+	script := redis.NewScript(luaScript)
+	keys := []string{s.schedulesKey(), s.runningKey()}
+	
+	result, err := script.Run(ctx, s.client, keys, nowMs, limit, leaseUntil).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to claim jobs: %w", err)
+	}
+	
+	jobIDs, ok := result.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("unexpected result type from Lua script")
+	}
+	
+	strings := make([]string, len(jobIDs))
+	for i, v := range jobIDs {
+		strings[i] = v.(string)
+	}
+	
+	return strings, nil
+}
+
+// RenewJobLease renews the lease for a job that's still being processed.
+func (s *RedisStore) RenewJobLease(ctx context.Context, jobID string, leaseMs int64) error {
+	nowMs := NowMs()
+	leaseUntil := nowMs + leaseMs
+	
+	// Update the score in the running ZSET
+	err := s.client.ZAdd(ctx, s.runningKey(), redis.Z{
+		Score:  float64(leaseUntil),
+		Member: jobID,
+	}).Err()
+	
+	if err != nil {
+		return fmt.Errorf("failed to renew job lease: %w", err)
+	}
+	
+	return nil
+}
+
+// ReleaseJobLease releases a job from the running set after successful execution.
+func (s *RedisStore) ReleaseJobLease(ctx context.Context, jobID string) error {
+	err := s.client.ZRem(ctx, s.runningKey(), jobID).Err()
+	if err != nil {
+		return fmt.Errorf("failed to release job lease: %w", err)
+	}
+	return nil
+}
+
+// GetStaleJobs returns jobs whose leases have expired (crashed workers).
+func (s *RedisStore) GetStaleJobs(ctx context.Context, nowMs int64, limit int) ([]string, error) {
+	result, err := s.client.ZRangeByScore(ctx, s.runningKey(), &redis.ZRangeBy{
+		Min:   "-inf",
+		Max:   strconv.FormatInt(nowMs, 10),
+		Count: int64(limit),
+	}).Result()
+	
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stale jobs: %w", err)
+	}
+	
+	return result, nil
+}
+
+// NowMs returns current time in milliseconds (helper for store package).
+func NowMs() int64 {
+	return time.Now().UTC().UnixMilli()
 }
 
 // serializeJob converts a Job to a map for Redis HSET.

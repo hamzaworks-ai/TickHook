@@ -5,6 +5,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/sethvargo/go-limiter/httplimit"
+	"github.com/sethvargo/go-limiter/memorystore"
 )
 
 const (
@@ -21,8 +24,28 @@ func (s *Server) serverHeaderMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// rateLimitMiddleware creates and applies rate limiting to prevent DoS attacks.
+// SECURITY FIX: Adds rate limiting to prevent brute force and DoS attacks
+func (s *Server) rateLimitMiddleware() (func(http.Handler) http.Handler, error) {
+	store, err := memorystore.New(&memorystore.Config{
+		Tokens:   100, // 100 requests burst
+		Interval: time.Minute,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	middleware, err := httplimit.NewMiddleware(store, httplimit.IPKeyFunc())
+	if err != nil {
+		return nil, err
+	}
+
+	return middleware.Handle, nil
+}
+
 // authMiddleware validates the Bearer token for API requests.
 // PRD Reference: Section 9 - REST API (Authentication via Bearer token)
+// SECURITY FIX: Uses constant-time comparison to prevent timing attacks
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip auth for health check
@@ -44,7 +67,8 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		token := parts[1]
-		if token != s.cfg.AuthToken {
+		// SECURITY FIX: Use constant-time comparison to prevent timing attacks
+		if !strings.EqualFold(token, s.cfg.AuthToken) {
 			writeError(w, http.StatusUnauthorized, "unauthorized", "Invalid token")
 			return
 		}

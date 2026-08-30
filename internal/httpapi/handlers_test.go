@@ -75,7 +75,10 @@ func TestServerHeader(t *testing.T) {
 	logger := slog.Default()
 	mockStore := newMockStore()
 
-	server := NewServer(cfg, mockStore, logger)
+	server, err := NewServer(cfg, mockStore, logger)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
 
 	req := httptest.NewRequest("GET", "/health", http.NoBody)
 	w := httptest.NewRecorder()
@@ -95,7 +98,10 @@ func TestAuthMiddleware_NoToken(t *testing.T) {
 	logger := slog.Default()
 	mockStore := newMockStore()
 
-	server := NewServer(cfg, mockStore, logger)
+	server, err := NewServer(cfg, mockStore, logger)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
 
 	req := httptest.NewRequest("GET", "/v1/jobs/test-id", http.NoBody)
 	w := httptest.NewRecorder()
@@ -115,7 +121,10 @@ func TestAuthMiddleware_InvalidToken(t *testing.T) {
 	logger := slog.Default()
 	mockStore := newMockStore()
 
-	server := NewServer(cfg, mockStore, logger)
+	server, err := NewServer(cfg, mockStore, logger)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
 
 	req := httptest.NewRequest("GET", "/v1/jobs/test-id", http.NoBody)
 	req.Header.Set("Authorization", "Bearer wrong-token")
@@ -136,7 +145,10 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 	logger := slog.Default()
 	mockStore := newMockStore()
 
-	server := NewServer(cfg, mockStore, logger)
+	server, err := NewServer(cfg, mockStore, logger)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
 
 	req := httptest.NewRequest("GET", "/v1/jobs/nonexistent", http.NoBody)
 	req.Header.Set("Authorization", "Bearer test-token")
@@ -158,7 +170,10 @@ func TestHealthEndpoint_NoAuth(t *testing.T) {
 	logger := slog.Default()
 	mockStore := newMockStore()
 
-	server := NewServer(cfg, mockStore, logger)
+	server, err := NewServer(cfg, mockStore, logger)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
 
 	req := httptest.NewRequest("GET", "/health", http.NoBody)
 	w := httptest.NewRecorder()
@@ -178,7 +193,10 @@ func TestCreateOneShotJob(t *testing.T) {
 	logger := slog.Default()
 	mockStore := newMockStore()
 
-	server := NewServer(cfg, mockStore, logger)
+	server, err := NewServer(cfg, mockStore, logger)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
 
 	body := `{
 		"execute_at": "2026-01-15T10:00:00Z",
@@ -222,7 +240,10 @@ func TestCreateOneShotJob_InvalidBody(t *testing.T) {
 	logger := slog.Default()
 	mockStore := newMockStore()
 
-	server := NewServer(cfg, mockStore, logger)
+	server, err := NewServer(cfg, mockStore, logger)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
 
 	body := `{"invalid json`
 
@@ -246,7 +267,10 @@ func TestCreateOneShotJob_MissingURL(t *testing.T) {
 	logger := slog.Default()
 	mockStore := newMockStore()
 
-	server := NewServer(cfg, mockStore, logger)
+	server, err := NewServer(cfg, mockStore, logger)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
 
 	body := `{
 		"execute_at": "2026-01-15T10:00:00Z",
@@ -275,7 +299,10 @@ func TestCreateRecurringJob(t *testing.T) {
 	logger := slog.Default()
 	mockStore := newMockStore()
 
-	server := NewServer(cfg, mockStore, logger)
+	server, err := NewServer(cfg, mockStore, logger)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
 
 	body := `{
 		"start_at": "2026-01-15T10:00:00Z",
@@ -322,7 +349,10 @@ func TestDeleteJob(t *testing.T) {
 		Type: model.JobTypeOneShot,
 	}
 
-	server := NewServer(cfg, mockStore, logger)
+	server, err := NewServer(cfg, mockStore, logger)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
 
 	req := httptest.NewRequest("DELETE", "/v1/jobs/test-job-id", http.NoBody)
 	req.Header.Set("Authorization", "Bearer test-token")
@@ -357,7 +387,10 @@ func TestDeleteJob_NotFound(t *testing.T) {
 	logger := slog.Default()
 	mockStore := newMockStore()
 
-	server := NewServer(cfg, mockStore, logger)
+	server, err := NewServer(cfg, mockStore, logger)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
 
 	req := httptest.NewRequest("DELETE", "/v1/jobs/nonexistent", http.NoBody)
 	req.Header.Set("Authorization", "Bearer test-token")
@@ -387,7 +420,10 @@ func TestGetJob(t *testing.T) {
 		MaxAttempts: 3,
 	}
 
-	server := NewServer(cfg, mockStore, logger)
+	server, err := NewServer(cfg, mockStore, logger)
+	if err != nil {
+		t.Fatalf("Failed to create server: %v", err)
+	}
 
 	req := httptest.NewRequest("GET", "/v1/jobs/test-job-id", http.NoBody)
 	req.Header.Set("Authorization", "Bearer test-token")
